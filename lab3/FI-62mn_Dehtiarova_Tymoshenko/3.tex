@@ -1,0 +1,151 @@
+\section{Практичне дослідження узгодження спільного секрету}
+
+\subsection{Вибір криптографічного механізму та бібліотеки}
+Для проведення експерименту з узгодження спільного секрету (Key Agreement) обрано механізм X25519,
+який базується на еліптичній кривій Curve25519. Цей протокол є сучасним стандартом (RFC 7748), оскільки
+забезпечує високу швидкодію, стійкість до атак по побічних каналах та високий рівень безпеки (128 біт). 
+
+Для реалізації використано бібліотеку \texttt{cryptography} мови Python, зокрема модуль
+\texttt{cryptography.hazmat.primitives.asymmetric.x25519}.
+
+\subsection{Генерація ключів Alice}
+Аліса генерує власну пару ключів X25519 (приватний та відповідний йому відкритий ключ).
+
+\begin{lstlisting}[language=Python]
+from cryptography.hazmat.primitives.asymmetric import x25519
+from cryptography.hazmat.primitives import serialization
+
+alice_private_key = x25519.X25519PrivateKey.generate()
+alice_public_key = alice_private_key.public_key()
+
+print("Alice key pair generated")
+\end{lstlisting}
+
+Результат виконання:
+\begin{lstlisting}
+Alice key pair generated
+\end{lstlisting}
+
+\subsection{Генерація ключів Bob}
+Боб незалежно генерує власну пару ключів X25519.
+
+\begin{lstlisting}[language=Python]
+bob_private_key = x25519.X25519PrivateKey.generate()
+bob_public_key = bob_private_key.public_key()
+
+print("Bob key pair generated")
+\end{lstlisting}
+
+Результат виконання:
+\begin{lstlisting}
+Bob key pair generated
+\end{lstlisting}
+
+\subsection{Обмін відкритими ключами}
+Учасники експортують свої відкриті ключі у байтовий формат для подальшої передачі через недовірену мережу.
+
+\begin{lstlisting}[language=Python]
+alice_pub_bytes = alice_public_key.public_bytes(
+    encoding=serialization.Encoding.Raw,
+    format=serialization.PublicFormat.Raw
+)
+bob_pub_bytes = bob_public_key.public_bytes(
+    encoding=serialization.Encoding.Raw,
+    format=serialization.PublicFormat.Raw
+)
+
+print("\nPublic keys exchanged via network:")
+print("Alice Public Key (hex):", alice_pub_bytes.hex())
+print("Bob Public Key (hex):  ", bob_pub_bytes.hex())
+\end{lstlisting}
+
+Результат виконання:
+\begin{lstlisting}
+Public keys exchanged via network:
+Alice Public Key (hex): 8b1a30d12461b22fa4b51740dd7edee7ee9fbfa205896c4acfce331e551e3775
+Bob Public Key (hex):   d56e6bc0a7c316ad64557ccdfc04d86bdbac162c8e427972c47d0561be703805
+\end{lstlisting}
+
+\subsection{Формування спільного секрету Alice}
+Аліса обчислює спільний секрет, використовуючи власний приватний ключ та відкритий ключ Боба.
+
+\begin{lstlisting}[language=Python]
+alice_shared_secret = alice_private_key.exchange(bob_public_key)
+
+print("\nAlice derived shared secret:")
+print("Alice Secret (hex):", alice_shared_secret.hex())
+\end{lstlisting}
+
+Результат виконання:
+\begin{lstlisting}
+Alice derived shared secret:
+Alice Secret (hex): c75a40118b93810d7cfbcdb15267733444be22e913bd60e025c1146ae9b65665
+\end{lstlisting}
+
+\subsection{Формування спільного секрету Bob}
+Боб обчислює спільний секрет, використовуючи власний приватний ключ та відкритий ключ Аліси.
+
+\begin{lstlisting}[language=Python]
+bob_shared_secret = bob_private_key.exchange(alice_public_key)
+
+print("\nBob derived shared secret:")
+print("Bob Secret (hex):  ", bob_shared_secret.hex())
+\end{lstlisting}
+
+Результат виконання:
+\begin{lstlisting}
+Bob derived shared secret:
+Bob Secret (hex):   c75a40118b93810d7cfbcdb15267733444be22e913bd60e025c1146ae9b65665
+\end{lstlisting}
+
+\subsection{Порівняння отриманих спільних секретів}
+Перевіряємо ідентичність обчислених секретів обома сторонами.
+
+\begin{lstlisting}[language=Python]
+is_equal = (alice_shared_secret == bob_shared_secret)
+
+print("\nComparison result:")
+print("Shared secrets are equal:", is_equal)
+\end{lstlisting}
+
+Результат виконання:
+\begin{lstlisting}
+Comparison result:
+Shared secrets are equal: True
+\end{lstlisting}
+
+\subsection{Аналіз результатів}
+
+\textbf{Чому Alice та Bob отримали однаковий спільний секрет?}
+
+Аліса та Боб отримали однаковий секрет завдяки математичним властивостям операцій над точками
+еліптичної кривої. Обчислення базується на комутативності скалярного множення:
+$$K_{shared} = d_A \cdot (d_B \cdot G) = d_B \cdot (d_A \cdot G) = (d_A \cdot d_B) \cdot G$$
+де $d_A$ та $d_B$ --- приватні ключі Аліси та Боба, а $G$ --- базова точка кривої X25519.
+
+\textbf{Які дані передавалися між сторонами?}
+
+Між сторонами через мережу передавалися виключно відкриті ключі (байтові послідовності
+$A_{pub} = d_A \cdot G$ та $B_{pub} = d_B \cdot G$).
+
+\textbf{Чи передавався сам спільний секрет через мережу?}
+
+Ні, сам спільний секрет через мережу ніколи не передавався. Обидві сторони обчислили його повністю
+незалежно та локально у власному середовищі.
+
+\textbf{Чи може пасивний спостерігач сформувати цей секрет, маючи лише передані відкриті ключі?}
+
+Ні, пасивний спостерігач не може сформувати секрет. Для цього йому потрібно знати хоча б один із
+приватних ключів ($d_A$ або $d_B$). Знаходячись у мережі та бачачи лише $A_{pub}$ і $B_{pub}$, визначити
+значення $d_A \cdot d_B \cdot G$ є обчислювально нездійсненною задачею, яка називається
+обчислювальною задачею Діффі--Хеллмана (CDH) і спирається на складність дискретного логарифмування в
+групі точок еліптичної кривої.
+
+\textbf{Чому сам по собі механізм узгодження ключа не обов'язково підтверджує особу іншої сторони?}
+
+Базовий протокол ECDH є анонімним і не забезпечує аутентифікацію сторін за замовчуванням. Відкритий
+ключ X25519 сам по собі не містить інформації про особу власника. Це робить протокол вразливим до атак
+типу <<людина посередині>> (Man-in-the-Middle), коли зловмисник може перехопити та підмінити відкриті
+ключі під час обміну. Для підтвердження особи відкриті ключі повинні додатково підписуватися цифровим
+підписом або підтверджуватися сертифікатами X.509 у рамках інфраструктури відкритих ключів
+(PKI)~\cite{RFC7748,NIST80057}.
